@@ -4,47 +4,52 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import axiosAuth from "../axios-auth";
 
-import socketIO from 'socket.io-client'
-const socket = socketIO.connect('http://localhost:3000')
+import socketIO from "socket.io-client";
+const socket = socketIO.connect("http://localhost:3000");
 
 function Home() {
-  const [chats, setChats] = useState([])
-  const [users, setUsers] = useState([])
-  const [messages, setMessages] = useState([])
-  const [selectedChat, setSelectedChat] = useState(null)
-  const senderId = localStorage.getItem("user_id")
+  const [chats, setChats] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const senderId = localStorage.getItem("user_id");
   const [messageToSend, setMessageToSend] = useState({
     message: "",
     chatId: "",
-    senderId: ""
-  })
+    senderId: "",
+  });
 
   const onMessageChange = (e) => {
-    setMessageToSend({ ...messageToSend, [e.target.name]: e.target.value, chatId: selectedChat, senderId: senderId})
-  }
+    setMessageToSend({
+      ...messageToSend,
+      [e.target.name]: e.target.value,
+      chatId: selectedChat,
+      senderId: senderId,
+    });
+  };
 
   const onMessageSubmit = (e) => {
-    e.preventDefault()
+    e.preventDefault();
     // console.log(messageToSend)
     axiosAuth
-    .post("http://localhost:3000/api/message", messageToSend)
-    .then((res) => {
-      setMessageToSend({
-        message: "",
-        chatId: "",
-        senderId: ""
+      .post("http://localhost:3000/api/message", messageToSend)
+      .then((res) => {
+        setMessageToSend({
+          message: "",
+          chatId: "",
+          senderId: "",
+        });
+        socket.emit("sendMessage", { chat_id: messageToSend.chatId });
+        clearMessage();
+        getMessages(messageToSend.chatId);
       })
-      socket.emit('sendMessage', { chat_id: messageToSend.chatId })
-      clearMessage()
-      getMessages(messageToSend.chatId)
-    })
-    .catch((err) => {
-      console.log("error send message")
-    })
-  }
+      .catch((err) => {
+        console.log("error send message");
+      });
+  };
   const clearMessage = () => {
     document.getElementById("message").value = "";
-  }
+  };
 
   const navigate = useNavigate();
   useEffect(() => {
@@ -60,7 +65,7 @@ function Home() {
         console.log("error home");
         navigate("/login");
       });
-    
+
     // // Listen for new messages from the server
     // socket.on('chat_<chat_id>', ({ chat_id }) => {
     //   // Update messages state when a new message is received
@@ -72,13 +77,19 @@ function Home() {
     //   // Clean up the socket connection when the component unmounts
     //   socket.disconnect();
     // };
-
   }, []);
   useEffect(() => {
-    socket.on(`chat_${selectedChat}`, (data) => {
-      getMessages(data.chat_id)
-    })
-  }, [selectedChat])
+    const handleMessage = (data) => {
+      getMessages(data.chat_id);
+    };
+    socket.on(`chat_${selectedChat}`, handleMessage);
+    return () => {
+      socket.off(`chat_${selectedChat}`, handleMessage);
+    };
+    // socket.on(`chat_${selectedChat}`, (data) => {
+    //   getMessages(data.chat_id)
+    // })
+  }, [selectedChat]);
   useEffect(() => {
     axiosAuth
       .get("http://localhost:3000/api/user/")
@@ -98,14 +109,44 @@ function Home() {
       .then((response) => {
         // console.log(response.data.messages)
         setMessages(response.data.messages);
-        setSelectedChat(chat_id)
-        clearMessage()
+        setSelectedChat(chat_id);
+        clearMessage();
       })
       .catch((err) => {
+        const errorMessage = [{
+          _id: "1",
+          message: "Tidak ada pesan",
+          senderId: "0",
+        }]
+        setSelectedChat(chat_id);
+        setMessages(errorMessage);
         console.log("error home");
       });
-  }
+  };
 
+  const createChat = (receiver_id) => {
+    const member = {
+      user_id_1: senderId,
+      user_id_2: receiver_id,
+    }
+    axiosAuth
+    .post("http://localhost:3000/api/chat", member)
+    .then((res) => {
+      axiosAuth
+      .get("http://localhost:3000/api/user/home")
+      .then((response) => {
+        setChats(response.data.chats);
+        setUsers(response.data.usersOnChat);
+      })
+      .catch((err) => {
+        console.log("error home add user", err)
+      })
+      getMessages(res.data.chatId);
+    })
+    .catch((err) => {
+      console.log("error create chat", err);
+    })
+  }
 
   // function getMesseges(chat_id) {
   //   alert(chat_id)
@@ -119,7 +160,6 @@ function Home() {
   //         console.log("error home");
   //       });
   // }
-
 
   return (
     <>
@@ -150,23 +190,13 @@ function Home() {
                 </svg>
               </button>
               <a href="#" className="flex ms-2 md:me-24">
-                <img
-                  src="/icon.png"
-                  className="h-8 me-3"
-                  alt="Echat Logo"
-                />
+                <img src="/icon.png" className="h-8 me-3" alt="Echat Logo" />
                 <span className="self-center text-xl font-semibold sm:text-2xl whitespace-nowrap invisible sm:visible dark:text-white">
                   <img className="h-5" src="/logotype.png" alt="" />
                 </span>
               </a>
             </div>
-            <div className="flex items-center">
-              <div className="flex items-center ms-3">
-                <div className="rounded-full bg-white">
-                  <input type="text" className="rounded-full px-3 py-1" placeholder="Search user..." />
-                </div>
-              </div>
-            </div>
+            <Search createChat={createChat} />
             <div className="flex items-center">
               <div className="flex items-center ms-3">
                 <div>
@@ -174,7 +204,7 @@ function Home() {
                     type="button"
                     className="flex text-sm bg-white p-2 rounded-full focus:ring-4 focus:ring-gray-300 dark:focus:ring-gray-600"
                     aria-expanded="false"
-                    data-dropdown-toggle="dropdown-user"
+                    data-dropdown-toggle="aku"
                   >
                     <span className="sr-only">Open user menu</span>
                     <img
@@ -186,7 +216,7 @@ function Home() {
                 </div>
                 <div
                   className="z-50 hidden my-4 text-base list-none bg-white divide-y divide-gray-100 rounded shadow dark:bg-gray-700 dark:divide-gray-600"
-                  id="dropdown-user"
+                  id="aku"
                 >
                   <div className="px-4 py-3" role="none">
                     <p
@@ -254,7 +284,12 @@ function Home() {
         <div className="h-full px-3 pb-4 overflow-y-auto bg-white dark:bg-gray-800">
           <ul className="space-y-2 font-medium">
             {chats.map((chat) => (
-              <Chat chat={chat} users={users} key={chat._id} getMessages={getMessages}/>
+              <Chat
+                chat={chat}
+                users={users}
+                key={chat._id}
+                getMessages={getMessages}
+              />
             ))}
           </ul>
         </div>
@@ -264,34 +299,44 @@ function Home() {
         <div className="p-4 border-2 border-gray-200 border-dashed rounded-lg dark:border-gray-700 mt-14">
           <div className="text-gray-700">
             {messages.map((message) => (
-            <Message message={message} key={message._id}/>
+              <Message message={message} key={message._id} />
             ))}
           </div>
           {selectedChat !== null && (
-          <form className="flex space-x-2" onSubmit={onMessageSubmit}>
-            <input type="text" id="message" name="message" onChange={onMessageChange}  className=" px-4 rounded-full w-full bg-white border border-slate-500"/>
-            <button type="submit" className="bg-slate-500 p-2 w-11 h-11 text-white rounded-full">
-              <img src="/send.svg" className="object-contain" alt="" />
-            </button>
-          </form>
+            <form className="flex space-x-2" onSubmit={onMessageSubmit}>
+              <input
+                type="text"
+                id="message"
+                name="message"
+                onChange={onMessageChange}
+                className=" px-4 rounded-full w-full bg-white border border-slate-500"
+              />
+              <button
+                type="submit"
+                className="bg-slate-500 p-2 w-11 h-11 text-white rounded-full"
+              >
+                <img src="/send.svg" className="object-contain" alt="" />
+              </button>
+            </form>
           )}
         </div>
       </div>
-
     </>
   );
 }
 
-function Chat({chat, users, getMessages}) {
+function Chat({ chat, users, getMessages }) {
+  const logged_user_id = localStorage.getItem("user_id");
 
-  const logged_user_id = localStorage.getItem("user_id")
-  
   // Check if user_id_1 is not the logged-in user
   let receiver_id = chat.user_id_1 !== logged_user_id ? chat.user_id_1 : null;
 
   // If user_id_1 is the logged-in user, check user_id_2
   if (!receiver_id) {
     receiver_id = chat.user_id_2 !== logged_user_id ? chat.user_id_2 : null;
+  }
+  if(!receiver_id) {
+    receiver_id = logged_user_id
   }
   const receiver = users.find((user) => user._id === receiver_id);
   return (
@@ -310,20 +355,113 @@ function Chat({chat, users, getMessages}) {
         >
           <path d="M14 2a3.963 3.963 0 0 0-1.4.267 6.439 6.439 0 0 1-1.331 6.638A4 4 0 1 0 14 2Zm1 9h-1.264A6.957 6.957 0 0 1 15 15v2a2.97 2.97 0 0 1-.184 1H19a1 1 0 0 0 1-1v-1a5.006 5.006 0 0 0-5-5ZM6.5 9a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9ZM8 10H5a5.006 5.006 0 0 0-5 5v2a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-2a5.006 5.006 0 0 0-5-5Z" />
         </svg>
-        <span className="flex-1 ms-3 whitespace-nowrap">{receiver.username}</span>
+        <span className="flex-1 ms-3 whitespace-nowrap">
+          {receiver.username}
+        </span>
       </a>
-      </li>
+    </li>
   );
 }
 
-function Message({message}) {
-  const senderId = localStorage.getItem("user_id")
+function Message({ message }) {
+  const senderId = localStorage.getItem("user_id");
   return (
     <>
-    <div className={`${message.senderId === senderId ? 'flex justify-end mb-2' : 'flex justify-start mb-1' }`}>
-      <div className="bg-slate-400 px-3 py-1 rounded-full">{message.message}</div>
-    </div>
+      <div
+        className={`${
+          message.senderId === senderId
+            ? "flex justify-end mb-2"
+            : message.senderId == 0 ? "flex justify-center mb-2" 
+            : "flex justify-start mb-1"
+        }`}
+      >
+        <div className="bg-slate-400 px-3 py-1 rounded-lg">
+          {message.message}
+        </div>
+      </div>
     </>
+  );
+}
+function Search({createChat}) {
+  const [searchInput, setSearchInput] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const handleFocus = () => {
+    setIsDropdownOpen(true);
+  };
+  const handleBlur = () => {
+    setTimeout(() => {
+      setIsDropdownOpen(false);
+    }, 200);
+    // setIsDropdownOpen(false);
+    clearSearch()
+  };
+  const clearSearch = () => {
+    document.getElementById("searchUser").value = "";
+  }
+  const onSearchChange = (e) => {
+    setSearchInput(e.target.value);
+    axiosAuth
+    .get(`http://localhost:3000/api/user/${searchInput}`)
+    .then((response) => {
+      setSearchResults(response.data.users)
+      // console.log(response.data.users)
+    })
+    .catch((err) => {
+      console.log("error searching", err)
+    })
+  }
+  return (
+    <div className="flex items-center">
+      <div className="flex items-center ms-3">
+        <div className="rounded-full bg-white">
+          <input
+            id="searchUser"
+            type="text"
+            className="rounded-full px-3 py-1"
+            placeholder="Cari pengguna..."
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onChange={onSearchChange}
+          />
+        </div>
+        <div
+          id="dropdown-user-2"
+          className={`absolute z-50 ${
+            isDropdownOpen ? "block" : "hidden"
+          } my-4 text-base list-none bg-white divide-y divide-gray-100 rounded shadow dark:bg-gray-700 dark:divide-gray-600`}
+        style={{top: '100%'}}>
+          <ul className="py-1" role="none">
+            {searchResults.map((result) => (
+              <SearchResult result={result} key={result._id} createChat={createChat} />
+            ))}
+            {/* <li>
+              <a
+                href="#"
+                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-600 dark:hover:text-white"
+                role="menuitem"
+              >
+                Dashboard
+              </a>
+            </li> */}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+function SearchResult({result, createChat}) {
+  return (
+    <li key={result._id}>
+      <a
+        href="#"
+        className="block px-10 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-600 dark:hover:text-white"
+        role="menuitem"
+        onClick={() => createChat(result._id)}
+      >
+        {result.username}
+      </a>
+    </li>
   )
 }
 // const Home = () => {
